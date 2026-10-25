@@ -128,19 +128,23 @@ async def process_screenshot(screenshot_id: uuid.UUID) -> None:
 # ---------------------------------------------------------------------------
 async def consolidate(user_id: uuid.UUID, *, fast: bool = False) -> dict:
     """fast=True skips the flex tier on LLM calls (manual button: interactive
-    latency matters). The background loop uses fast=False for the flex discount."""
-    stats = {"backfilled_urls": 0, "clusters": 0, "memories_created": 0,
-             "memories_merged": 0, "evidence_links": 0}
+    latency matters). The background loop uses fast=False for the flex discount.
+
+    Token discipline: LLM calls happen only when a cluster carries genuinely
+    NEW evidence for a memory. Unchanged clusters cost zero API calls."""
+    stats = {"backfilled_urls": 0, "deduped_memories": 0, "clusters": 0,
+             "memories_created": 0, "memories_merged": 0, "clusters_unchanged": 0,
+             "evidence_links": 0}
 
     stats["backfilled_urls"] = _backfill_urls(user_id)
+    stats["deduped_memories"] = _dedupe_memories(user_id)
     clusters = _find_clusters(user_id)
 
     for members in clusters:
         stats["clusters"] += 1
-        captions = [m["caption"] or "" for m in members]
         centroid = _centroid([m["vec"] for m in members])
 
-        # Existing similar memory? (cosine distance <= 1 - MEMORY_MERGE_SIMILARITY)
+        # Existing memory covering this cluster? (centroid pre-filter)
         existing = db.query_one(
             "SELECT id, content, importance FROM memories "
             "WHERE user_id = %s AND embedding <=> %s::vector <= %s "
@@ -149,51 +153,129 @@ async def consolidate(user_id: uuid.UUID, *, fast: bool = False) -> dict:
              db.vec_lit(centroid)],
         )
 
-        try:
-            if existing:
+        if existing:
+            _link_evidence(existing["id"], members)
+            stats["evidence_links"] += len(members)
+
+            # LLM-merge only when some evidence is not already linked —
+            # recurring identical activity costs zero API calls.
+            already = {
+                r["observation_id"]
+                for r in db.query(
+                    "SELECT observation_id FROM memory_observations WHERE memory_id = %s",
+                    [existing["id"]])
+            }
+            new_members = [m for m in members if m["id"] not in already]
+            if not new_members:
+                stats["clusters_unchanged"] += 1
+                continue
+            try:
                 content = await asyncio.to_thread(
-                    caption.merge_memory, existing["content"], captions,
+                    caption.merge_memory, existing["content"],
+                    [m["caption"] or "" for m in new_members],
                     prefer_flex=not fast)
-                importance = min(existing["importance"] + 0.05, 0.95)
                 vec = await embed_service.embed_document(content)
-                db.execute(
-                    "UPDATE memories SET content = %s, embedding = %s::vector, "
-                    "importance = %s, metadata = %s::jsonb WHERE id = %s",
-                    [content, db.vec_lit(vec), importance,
-                     db._jsonb({"topics": _union_topics(members), "source": "auto"}),
-                     existing["id"]],
-                )
-                memory_id = existing["id"]
-                stats["memories_merged"] += 1
-            else:
-                content = await asyncio.to_thread(
-                    caption.summarize_observations, captions, prefer_flex=not fast)
-                importance = min(
-                    0.3 + 0.08 * len(members) + 0.2 * _recency_bonus(members), 0.95
-                )
-                vec = await embed_service.embed_document(content)
-                row = db.query_one(
-                    "INSERT INTO memories (user_id, content, embedding, importance, metadata) "
-                    "VALUES (%s, %s, %s::vector, %s, %s::jsonb) RETURNING id",
-                    [user_id, content, db.vec_lit(vec), importance,
-                     db._jsonb({"topics": _union_topics(members), "source": "auto"})],
-                )
-                memory_id = row["id"]
-                stats["memories_created"] += 1
+            except Exception:
+                log.exception("Memory merge failed — keeping existing content")
+                continue
+            db.execute(
+                "UPDATE memories SET content = %s, embedding = %s::vector, "
+                "importance = %s WHERE id = %s",
+                [content, db.vec_lit(vec),
+                 min(existing["importance"] + 0.05, 0.95), existing["id"]],
+            )
+            stats["memories_merged"] += 1
+            log.info("Memory merged: %s", content[:80])
+            continue
+
+        # No existing memory covers the cluster: summarize, then guard against
+        # inserting a near-duplicate of another memory (memory-to-memory space).
+        try:
+            content = await asyncio.to_thread(
+                caption.summarize_observations,
+                [m["caption"] or "" for m in members], prefer_flex=not fast)
+            vec = await embed_service.embed_document(content)
         except Exception:
             log.exception("Memory creation failed for a cluster — skipping cluster")
             continue
 
-        for m in members:
-            db.execute(
-                "INSERT INTO memory_observations (memory_id, observation_id) "
-                "VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                [memory_id, m["id"]],
-            )
-            stats["evidence_links"] += 1
-        log.info("Memory %s: %s", "merged" if existing else "created", content[:80])
+        duplicate = db.query_one(
+            "SELECT id FROM memories WHERE user_id = %s AND embedding <=> %s::vector <= %s "
+            "ORDER BY embedding <=> %s::vector LIMIT 1",
+            [user_id, db.vec_lit(vec), 1 - config.MEMORY_DUPLICATE_SIMILARITY,
+             db.vec_lit(vec)],
+        )
+        if duplicate:
+            _link_evidence(duplicate["id"], members)
+            stats["evidence_links"] += len(members)
+            stats["memories_merged"] += 1
+            log.info("Cluster folded into existing memory %s (duplicate candidate)",
+                     str(duplicate["id"])[:8])
+            continue
+
+        importance = min(0.3 + 0.08 * len(members) + 0.2 * _recency_bonus(members), 0.95)
+        row = db.query_one(
+            "INSERT INTO memories (user_id, content, embedding, importance, metadata) "
+            "VALUES (%s, %s, %s::vector, %s, %s::jsonb) RETURNING id",
+            [user_id, content, db.vec_lit(vec), importance,
+             db._jsonb({"topics": _union_topics(members), "source": "auto"})],
+        )
+        _link_evidence(row["id"], members)
+        stats["evidence_links"] += len(members)
+        stats["memories_created"] += 1
+        log.info("Memory created: %s", content[:80])
 
     return stats
+
+
+def _link_evidence(memory_id: uuid.UUID, members: list[dict]) -> None:
+    for m in members:
+        db.execute(
+            "INSERT INTO memory_observations (memory_id, observation_id) "
+            "VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            [memory_id, m["id"]],
+        )
+
+
+def _dedupe_memories(user_id: uuid.UUID) -> int:
+    """Fold near-identical memories (>= MEMORY_DUPLICATE_SIMILARITY) into the
+    oldest one: evidence links move, importance/hit_count carry over. Pure
+    vectors + SQL — zero LLM cost."""
+    rows = db.query(
+        "SELECT id, content, importance, hit_count, created_at, embedding::text AS embedding "
+        "FROM memories WHERE user_id = %s ORDER BY created_at",
+        [user_id],
+    )
+    mems = []
+    for r in rows:
+        vec = np.array([float(x) for x in r["embedding"].strip("[]").split(",")], dtype=np.float32)
+        mems.append({**r, "vec": vec})
+
+    removed = 0
+    keepers: list[dict] = []
+    for m in mems:  # oldest first
+        target = next(
+            (k for k in keepers if _cosine(k["vec"], m["vec"]) >= config.MEMORY_DUPLICATE_SIMILARITY),
+            None,
+        )
+        if target is None:
+            keepers.append(m)
+            continue
+        db.execute(
+            "INSERT INTO memory_observations (memory_id, observation_id, contribution) "
+            "SELECT %s, observation_id, contribution FROM memory_observations "
+            "WHERE memory_id = %s ON CONFLICT DO NOTHING",
+            [target["id"], m["id"]],
+        )
+        db.execute(
+            "UPDATE memories SET importance = greatest(importance, %s), "
+            "hit_count = hit_count + %s WHERE id = %s",
+            [m["importance"], m["hit_count"], target["id"]],
+        )
+        db.execute("DELETE FROM memories WHERE id = %s", [m["id"]])
+        removed += 1
+        log.info("Deduped memory %s into %s", str(m["id"])[:8], str(target["id"])[:8])
+    return removed
 
 
 def _backfill_urls(user_id: uuid.UUID) -> int:

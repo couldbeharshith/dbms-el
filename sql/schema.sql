@@ -160,6 +160,15 @@ ALTER TABLE observations ADD COLUMN IF NOT EXISTS url TEXT;
 ALTER TABLE screenshots  ADD COLUMN IF NOT EXISTS phash TEXT;
 ALTER TABLE screenshots  ALTER COLUMN phash TYPE TEXT;  -- may predate as CHAR(16)
 
+-- A reasoning-model bug once stored empty memories; the DB now rejects them.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'memories_content_nonempty') THEN
+        ALTER TABLE memories ADD CONSTRAINT memories_content_nonempty
+            CHECK (length(btrim(content)) > 0);
+    END IF;
+END $$;
+
 -- ----------------------------------------------------------------------------
 -- updated_at trigger + memory-evidence view
 -- ----------------------------------------------------------------------------

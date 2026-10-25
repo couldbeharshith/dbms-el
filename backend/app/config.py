@@ -38,6 +38,11 @@ CONSOLIDATION_INTERVAL_SEC = 120
 CLUSTER_SIMILARITY_THRESHOLD = 0.78
 CLUSTER_MIN_OBSERVATIONS = 3
 MEMORY_MERGE_SIMILARITY = 0.85
+# Memory-to-memory duplicate suppression (same text granularity, reliable):
+# a candidate whose embedding is this close to an existing memory is linked to
+# it instead of inserting a near-identical row; the periodic dedupe pass folds
+# any that slipped through — both without any LLM calls.
+MEMORY_DUPLICATE_SIMILARITY = 0.88
 RETENTION_CHECK_INTERVAL_SEC = 6 * 3600
 
 # Perceptual-fingerprint dedupe: skip captures that look identical to a RECENT

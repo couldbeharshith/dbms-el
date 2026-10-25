@@ -130,7 +130,11 @@ def caption_image(image_bytes: bytes, mime: str = "image/png") -> dict:
 
 
 def summarize_observations(captions: list[str], *, prefer_flex: bool = True) -> str:
-    """Cluster captions -> one concise memory (1-3 sentences)."""
+    """Cluster captions -> one concise memory (1-3 sentences).
+
+    gpt-6-luna is a reasoning model: hidden reasoning tokens count against
+    max_completion_tokens, so a tight budget can yield an EMPTY visible
+    answer. We start roomy and retry once with a large budget if empty."""
     listed = "\n".join(f"- {c}" for c in captions)
     user = (
         "Recent observations of the user's activity:\n"
@@ -139,11 +143,15 @@ def summarize_observations(captions: list[str], *, prefer_flex: bool = True) -> 
         "what the user is interested in or doing (products compared, preferences, "
         "budget, decisions). Output only the memory text, no preamble."
     )
-    return _complete(
-        [{"role": "system", "content": MEMORY_SYSTEM}, {"role": "user", "content": user}],
-        max_tokens=220,
-        prefer_flex=prefer_flex,
-    ).strip()
+    messages = [
+        {"role": "system", "content": MEMORY_SYSTEM},
+        {"role": "user", "content": user},
+    ]
+    for budget in (600, 2000):
+        text = _complete(messages, max_tokens=budget, prefer_flex=prefer_flex).strip()
+        if text:
+            return text
+    raise RuntimeError("model returned an empty memory summary twice")
 
 
 def merge_memory(existing: str, captions: list[str], *, prefer_flex: bool = True) -> str:
@@ -154,8 +162,12 @@ def merge_memory(existing: str, captions: list[str], *, prefer_flex: bool = True
         "Rewrite the memory as 1-3 concise sentences that merge the new "
         "information. Output only the memory text, no preamble."
     )
-    return _complete(
-        [{"role": "system", "content": MEMORY_SYSTEM}, {"role": "user", "content": user}],
-        max_tokens=220,
-        prefer_flex=prefer_flex,
-    ).strip()
+    messages = [
+        {"role": "system", "content": MEMORY_SYSTEM},
+        {"role": "user", "content": user},
+    ]
+    for budget in (600, 2000):
+        text = _complete(messages, max_tokens=budget, prefer_flex=prefer_flex).strip()
+        if text:
+            return text
+    raise RuntimeError("model returned an empty memory merge twice")
