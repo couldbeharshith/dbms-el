@@ -154,6 +154,13 @@ CREATE INDEX IF NOT EXISTS idx_chat_queries_user_created
     ON chat_queries (user_id, created_at DESC);
 
 -- ----------------------------------------------------------------------------
+-- Idempotent column additions (tables above may predate these features)
+-- ----------------------------------------------------------------------------
+ALTER TABLE observations ADD COLUMN IF NOT EXISTS url TEXT;
+ALTER TABLE screenshots  ADD COLUMN IF NOT EXISTS phash TEXT;
+ALTER TABLE screenshots  ALTER COLUMN phash TYPE TEXT;  -- may predate as CHAR(16)
+
+-- ----------------------------------------------------------------------------
 -- updated_at trigger + memory-evidence view
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION touch_updated_at() RETURNS trigger AS $$
@@ -173,7 +180,9 @@ CREATE TRIGGER trg_memories_touch_updated_at BEFORE UPDATE ON memories
     WHEN (OLD.content IS DISTINCT FROM NEW.content OR OLD.importance IS DISTINCT FROM NEW.importance)
     EXECUTE FUNCTION touch_updated_at();
 
-CREATE OR REPLACE VIEW v_memory_evidence AS
+-- dropped+recreated (not CREATE OR REPLACE) so new columns may be inserted freely
+DROP VIEW IF EXISTS v_memory_evidence;
+CREATE VIEW v_memory_evidence AS
 SELECT
     m.id                AS memory_id,
     m.content           AS memory_content,
@@ -182,6 +191,7 @@ SELECT
     o.id                AS observation_id,
     o.kind              AS observation_kind,
     o.caption           AS observation_caption,
+    o.url               AS observation_url,
     o.observed_at       AS observed_at,
     s.id                AS screenshot_id,
     s.captured_at       AS screenshot_captured_at,

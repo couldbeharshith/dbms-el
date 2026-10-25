@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app import config, db, pipeline
 from backend.app.embed import service as embed_service
-from backend.app.routers import data, events, memories, queries, screenshots, settings, stats
+from backend.app.routers import data, events, memories, queries, recall, screenshots, settings, stats
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("dbms-el")
@@ -103,6 +103,7 @@ app.include_router(events.router)
 app.include_router(screenshots.router)
 app.include_router(memories.router)
 app.include_router(queries.router)
+app.include_router(recall.router)
 app.include_router(stats.router)
 app.include_router(settings.router)
 app.include_router(data.router)

@@ -84,9 +84,12 @@ uv run python scripts/seed_demo.py --reset  # or wipe + reseed
    are active).
 3. The Windows app captures an encrypted screenshot every `screenshot_interval_sec`
    (default 30 s, Settings) with the foreground window title attached.
-   **Duplicate suppression**: a screenshot whose SHA-256 has ever been seen before
-   is dropped at upload — nothing is stored, captioned, or embedded (an unchanged
-   screen costs nothing).
+   **Duplicate suppression** (two layers): byte-identical captures are dropped
+   globally by SHA-256; near-identical ones (idle screen, cursor blink) are
+   dropped within a 10-minute window by a perceptual fingerprint (64×36
+   grayscale thumbnail, mean-pixel-difference ≤ 0.5%). Nothing stored, nothing
+   sent to any API. When a browser was in the foreground, the page URL is
+   attached to the observation (display-only provenance).
 4. Each screenshot is captioned + OCR'd by `gpt-6-luna` (flex tier first, auto
    fallback) and embedded **locally on your GPU** (text *and* image embeddings,
    `vector(1024)`).
@@ -99,6 +102,15 @@ uv run python scripts/seed_demo.py --reset  # or wipe + reseed
    (score = `0.6·cosine + 0.25·importance + 0.15·recency`), appends the context
    block **after your text**, and sends. A toast confirms: `🧠 DBMS-EL: injected`.
 8. The chatbot answers using your previously captured research.
+
+## Recall (search your own screen history)
+
+The **Recall** page in the Windows app is a semantic search over every
+observation — caption + OCR text embedding *and* the screenshot image
+embedding (shared retrieval space, so text queries match images too).
+Describe what you half-remember ("code", "python project", "laptop prices"),
+open the hit, and the modal shows the decrypted screenshot, its OCR text and
+the page URL it came from. Same engine as demo.sql §18.
 
 ## SQL demo (DBMS concepts)
 
@@ -118,7 +130,7 @@ CRUD.
 
 ```
 users ─┬─ browsing_events ──┐
-       ├─ screenshots ──────┼─> observations (kind: screenshot|browsing, embedding + image_embedding)
+       ├─ screenshots ──────┼─> observations (kind: screenshot|browsing, embedding + image_embedding, url)
        ├─ memories ─────────┼─< memory_observations >─ observations   (M:N evidence links)
        └─ chat_queries      (query embedding + retrieved memory ids in JSONB)
 ```

@@ -2,14 +2,16 @@ import { useEffect, useState } from "react";
 import Dashboard from "./pages/Dashboard";
 import History from "./pages/History";
 import Memories from "./pages/Memories";
+import Recall from "./pages/Recall";
 import Settings from "./pages/Settings";
 import { get } from "./api";
 
-type Page = "dashboard" | "history" | "memories" | "settings";
+type Page = "dashboard" | "history" | "recall" | "memories" | "settings";
 
 const NAV: { id: Page; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "◉" },
   { id: "history", label: "History", icon: "≡" },
+  { id: "recall", label: "Recall", icon: "⌕" },
   { id: "memories", label: "Memories", icon: "🧠" },
   { id: "settings", label: "Settings", icon: "⚙" },
 ];
@@ -89,6 +91,7 @@ export default function App() {
       <main className="flex-1 overflow-y-auto">
         {page === "dashboard" && <Dashboard />}
         {page === "history" && <History />}
+        {page === "recall" && <Recall />}
         {page === "memories" && <Memories />}
         {page === "settings" && <Settings />}
       </main>

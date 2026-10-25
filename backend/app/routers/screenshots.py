@@ -4,12 +4,14 @@ import asyncio
 import base64
 import datetime as dt
 import hashlib
+import logging
 import uuid
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from backend.app import config, crypto, db, pipeline
+from backend.app.phash import distance, fingerprint
 
 router = APIRouter(prefix="/api", tags=["screenshots"])
 
@@ -35,16 +37,28 @@ async def upload_screenshot(payload: ScreenshotIn, request: Request):
     if len(image_bytes) > MAX_IMAGE_BYTES:
         raise HTTPException(413, "Screenshot too large")
 
-    # Duplicate suppression: an unchanged screen produces byte-identical PNGs.
-    # A screenshot is stored and processed only if its hash has NEVER been seen
-    # before (checked across all stored screenshots via the sha256 index).
+    # Duplicate suppression, two layers:
+    # 1) exact SHA-256, global — a byte-identical capture was ever stored;
+    # 2) perceptual hash (dHash), windowed — looks identical to a RECENT
+    #    capture (cursor blinks, clock ticks). Windowed so a genuinely new
+    #    page on a similar layout still gets captured later.
     sha = hashlib.sha256(image_bytes).hexdigest()
     seen = db.query_one(
         "SELECT 1 FROM screenshots WHERE user_id = %s AND sha256 = %s LIMIT 1",
         [user["id"], sha],
     )
     if seen is not None:
-        return {"accepted": True, "skipped_duplicate": True, "sha256": sha}
+        return {"accepted": True, "skipped_duplicate": True, "reason": "exact", "sha256": sha}
+
+    ph = fingerprint(image_bytes)
+    if ph:
+        recent = db.query(
+            "SELECT phash FROM screenshots WHERE user_id = %s "
+            "AND captured_at > now() - make_interval(mins => %s) AND phash IS NOT NULL",
+            [user["id"], config.PHASH_WINDOW_MINUTES],
+        )
+        if any(distance(ph, r["phash"]) <= config.PHASH_MAX_MAD for r in recent):
+            return {"accepted": True, "skipped_duplicate": True, "reason": "perceptual"}
 
     sid = uuid.uuid4()
     rel_path = f"screenshots/{sid}.enc"
@@ -54,28 +68,39 @@ async def upload_screenshot(payload: ScreenshotIn, request: Request):
         """
         INSERT INTO screenshots
             (id, user_id, captured_at, file_path, sha256, size_bytes, width, height,
-             source_app, encrypted, metadata)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s::jsonb)
+             source_app, encrypted, phash, metadata)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s::jsonb)
         RETURNING id, captured_at, source_app
         """,
         [sid, user["id"], payload.captured_at or dt.datetime.now(dt.timezone.utc),
          rel_path, sha, len(image_bytes),
-         payload.width, payload.height, payload.source_app,
+         payload.width, payload.height, payload.source_app, ph,
          db._jsonb(payload.metadata)],
     )
 
-    # Caption + embed + observe happens asynchronously (create_task actually
-    # schedules it — a bare coroutine object would never run).
-    task = asyncio.create_task(pipeline.process_screenshot(sid))
-    request.app.state.pending_tasks.add(task)
-    task.add_done_callback(request.app.state.pending_tasks.discard)
+    # Caption + embed + observe happens asynchronously.
+    _schedule_processing(request, sid)
     return {"accepted": True, "skipped_duplicate": False, **row}
+
+
+log = logging.getLogger("dbms-el.screenshots")
+
+
+def _task_done(task: asyncio.Task) -> None:
+    # Calling task.exception() retrieves it — prevents asyncio's
+    # "Task exception was never retrieved" noise; real failures log once here.
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        log.warning("screenshot processing task failed: %r", exc)
 
 
 def _schedule_processing(request: Request, sid: uuid.UUID) -> None:
     task = asyncio.create_task(pipeline.process_screenshot(sid))
     request.app.state.pending_tasks.add(task)
     task.add_done_callback(request.app.state.pending_tasks.discard)
+    task.add_done_callback(_task_done)
 
 
 @router.post("/screenshots/reprocess")
@@ -128,8 +153,7 @@ async def screenshot_detail(sid: uuid.UUID, request: Request):
         """
         SELECT s.id, s.captured_at, s.width, s.height, s.source_app, s.size_bytes,
                s.encrypted, s.metadata,
-               o.id AS observation_id, o.caption, o.topics, o.observed_at,
-               length(o.ocr_encrypted) AS ocr_length
+               o.id AS observation_id, o.caption, o.topics, o.observed_at, o.url
         FROM screenshots s
         LEFT JOIN observations o ON o.screenshot_id = s.id
         WHERE s.id = %s AND s.user_id = %s
@@ -138,6 +162,17 @@ async def screenshot_detail(sid: uuid.UUID, request: Request):
     )
     if row is None:
         raise HTTPException(404, "Screenshot not found")
+    if row.get("observation_id"):
+        ocr = db.query_one(
+            "SELECT ocr_encrypted FROM observations WHERE id = %s", [row["observation_id"]]
+        )
+        if ocr and ocr["ocr_encrypted"]:
+            try:
+                row["ocr_text"] = crypto.decrypt(bytes(ocr["ocr_encrypted"])).decode(
+                    "utf-8", errors="replace"
+                )
+            except Exception:
+                row["ocr_text"] = None
     return row
 
 

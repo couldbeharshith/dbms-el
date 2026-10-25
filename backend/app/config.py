@@ -38,5 +38,18 @@ CONSOLIDATION_INTERVAL_SEC = 120
 CLUSTER_SIMILARITY_THRESHOLD = 0.78
 CLUSTER_MIN_OBSERVATIONS = 3
 MEMORY_MERGE_SIMILARITY = 0.85
-BROWSING_EVENT_MIN_SECONDS = 30
 RETENTION_CHECK_INTERVAL_SEC = 6 * 3600
+
+# Perceptual-fingerprint dedupe: skip captures that look identical to a RECENT
+# one (idle screens, cursor blinks, tiny edits). Windowed so an unchanged
+# desktop isn't permanently skipped. Exact SHA-256 dedupe stays global.
+# Empirical distances (mean abs pixel diff): idle/blink ~0.0001, small text
+# edit ~0.001-0.0013, different page with photo ~0.015+, different app ~0.7.
+PHASH_WINDOW_MINUTES = 10
+PHASH_MAX_MAD = 0.005
+
+# A screenshot's URL is attached only when the foreground app was a browser.
+BROWSER_TITLE_TAILS = {
+    "google chrome", "chrome", "brave", "microsoft edge", "edge",
+    "mozilla firefox", "firefox", "chromium",
+}

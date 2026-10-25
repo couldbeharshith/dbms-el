@@ -194,4 +194,20 @@ SELECT count(*) AS obs_remaining_after_screenshot_delete
 FROM   observations
 WHERE  caption = 'cascade demo';
 
+\echo == 18. RECALL — semantic search over observations (text vs text + cross-modal) ==
+WITH probe AS (SELECT embedding FROM memories WHERE content ILIKE '%laptop%' LIMIT 1)
+SELECT o.kind,
+       left(o.caption, 55)                                  AS caption,
+       s.source_app,
+       o.url,
+       round((1 - (o.embedding <=> probe.embedding))::numeric, 4)         AS text_sim,
+       round(coalesce(1 - (o.image_embedding <=> probe.embedding), 0)::numeric, 4) AS image_sim
+FROM   observations o
+LEFT   JOIN screenshots s ON s.id = o.screenshot_id
+CROSS  JOIN probe
+WHERE  o.embedding IS NOT NULL
+ORDER  BY GREATEST(1 - (o.embedding <=> probe.embedding),
+                   coalesce(1 - (o.image_embedding <=> probe.embedding), 0)) DESC
+LIMIT  5;
+
 \echo == done ==

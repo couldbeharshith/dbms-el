@@ -1,13 +1,15 @@
 """Screenshot -> Observation -> Memory pipeline.
 
 process_screenshot: decrypt pixels -> gpt-6-luna caption/OCR -> embed caption+OCR
-(text) and the raw image (image_embedding) -> insert observations row.
+(text) and the raw image (image_embedding) -> insert observations row. When the
+screenshot was taken with a browser in the foreground, the URL of the page the
+user was on is attached (display-only; helps the user browse their observations).
 
-consolidate: (1) turn significant, not-yet-observed browsing events into
-observations; (2) greedy cosine clustering of the last 24h of observations;
-clusters of >= CLUSTER_MIN_OBSERVATIONS similar observations become a memory
-(new, or merged into an existing >= MEMORY_MERGE_SIMILARITY memory) with
-evidence links in memory_observations.
+consolidate: greedy cosine clustering of the last 24h of screenshot
+observations; clusters of >= CLUSTER_MIN_OBSERVATIONS similar observations
+become a memory (new, or merged into an existing >= MEMORY_MERGE_SIMILARITY
+memory) with evidence links in memory_observations. Also backfills missing
+screenshot URLs now that the extension's event batches have all arrived.
 
 Deliberately simple, explainable scoring — see config for the thresholds.
 """
@@ -19,12 +21,33 @@ import uuid
 from datetime import datetime, timezone
 
 import numpy as np
+from psycopg.errors import ForeignKeyViolation
 from PIL import Image
 
 from backend.app import caption, config, crypto, db
 from backend.app.embed import service as embed_service
 
 log = logging.getLogger("dbms-el.pipeline")
+
+
+def _is_browser_title(title: str | None) -> bool:
+    if not title:
+        return False
+    tail = title.rsplit("-", 1)[-1].strip().lower()
+    return tail in config.BROWSER_TITLE_TAILS
+
+
+def _recent_event_url(user_id, at: datetime) -> str | None:
+    """URL of the page the user was on at `at` (browser events within 15 min
+    before the capture; the extension flushes dwell in 30s batches)."""
+    row = db.query_one(
+        "SELECT url FROM browsing_events "
+        "WHERE user_id = %s AND visited_at <= %s "
+        "AND visited_at > %s - interval '15 minutes' "
+        "ORDER BY visited_at DESC LIMIT 1",
+        [user_id, at, at],
+    )
+    return row["url"] if row else None
 
 
 # ---------------------------------------------------------------------------
@@ -65,25 +88,38 @@ async def process_screenshot(screenshot_id: uuid.UUID) -> None:
         log.exception("Embedding failed for %s", screenshot_id)
         return
 
-    db.execute(
-        """
-        INSERT INTO observations
-            (user_id, screenshot_id, kind, caption, ocr_encrypted, topics,
-             observed_at, embedding, image_embedding, metadata)
-        VALUES (%s, %s, 'screenshot', %s, %s, %s, %s, %s::vector, %s::vector, %s::jsonb)
-        """,
-        [
-            row["user_id"],
-            screenshot_id,
-            result["caption"],
-            crypto.encrypt(result["ocr_text"].encode()) if result["ocr_text"] else None,
-            result["topics"],
-            row["captured_at"],
-            db.vec_lit(text_vec),
-            db.vec_lit(image_vec),
-            db._jsonb({"importance_hint": result["importance_hint"], "source_app": row["source_app"]}),
-        ],
-    )
+    # Display-only provenance: which page was on screen (browser in foreground).
+    url = None
+    if _is_browser_title(row["source_app"]):
+        url = _recent_event_url(row["user_id"], row["captured_at"])
+
+    try:
+        db.execute(
+            """
+            INSERT INTO observations
+                (user_id, screenshot_id, kind, caption, ocr_encrypted, topics,
+                 observed_at, embedding, image_embedding, url, metadata)
+            VALUES (%s, %s, 'screenshot', %s, %s, %s, %s, %s::vector, %s::vector, %s, %s::jsonb)
+            """,
+            [
+                row["user_id"],
+                screenshot_id,
+                result["caption"],
+                crypto.encrypt(result["ocr_text"].encode()) if result["ocr_text"] else None,
+                result["topics"],
+                row["captured_at"],
+                db.vec_lit(text_vec),
+                db.vec_lit(image_vec),
+                url,
+                db._jsonb({"importance_hint": result["importance_hint"], "source_app": row["source_app"]}),
+            ],
+        )
+    except ForeignKeyViolation:
+        # The screenshot was deleted (History / data controls) while this task
+        # was captioning — discarding the observation is the correct outcome.
+        log.info("Screenshot %s was deleted during processing — observation discarded",
+                 screenshot_id)
+        return
     log.info("Observation created for screenshot %s: %s", screenshot_id, result["caption"][:80])
 
 
@@ -93,10 +129,10 @@ async def process_screenshot(screenshot_id: uuid.UUID) -> None:
 async def consolidate(user_id: uuid.UUID, *, fast: bool = False) -> dict:
     """fast=True skips the flex tier on LLM calls (manual button: interactive
     latency matters). The background loop uses fast=False for the flex discount."""
-    stats = {"browsing_observations": 0, "clusters": 0, "memories_created": 0,
+    stats = {"backfilled_urls": 0, "clusters": 0, "memories_created": 0,
              "memories_merged": 0, "evidence_links": 0}
 
-    stats["browsing_observations"] = await _create_browsing_observations(user_id)
+    stats["backfilled_urls"] = _backfill_urls(user_id)
     clusters = _find_clusters(user_id)
 
     for members in clusters:
@@ -160,45 +196,25 @@ async def consolidate(user_id: uuid.UUID, *, fast: bool = False) -> dict:
     return stats
 
 
-async def _create_browsing_observations(user_id: uuid.UUID) -> int:
-    """Significant (>= BROWSING_EVENT_MIN_SECONDS) events from the last 24h that
-    have no observation yet become one 'browsing' observation each (max 10/run)."""
+def _backfill_urls(user_id: uuid.UUID) -> int:
+    """Attach URLs to screenshot observations that missed theirs at processing
+    time (the covering browsing_events row arrives up to 30s later)."""
     rows = db.query(
-        """
-        SELECT b.id, b.domain, b.title, b.url, b.time_spent_sec, b.visited_at
-        FROM browsing_events b
-        LEFT JOIN observations o ON o.browsing_event_id = b.id
-        WHERE b.user_id = %s AND o.id IS NULL
-          AND b.visited_at > now() - interval '24 hours'
-          AND b.time_spent_sec >= %s
-        ORDER BY b.time_spent_sec DESC
-        LIMIT 10
-        """,
-        [user_id, config.BROWSING_EVENT_MIN_SECONDS],
+        "SELECT id, observed_at, metadata->>'source_app' AS source_app "
+        "FROM observations "
+        "WHERE user_id = %s AND kind = 'screenshot' AND url IS NULL "
+        "AND observed_at > now() - interval '24 hours'",
+        [user_id],
     )
-    created = 0
-    for b in rows:
-        text = (
-            f"User spent {b['time_spent_sec']}s on {b['domain']}"
-            + (f" — {b['title']}" if b["title"] else "")
-        )
-        try:
-            vec = await embed_service.embed_document(text)
-        except Exception:
-            log.exception("Could not embed browsing event %s", b["id"])
+    filled = 0
+    for r in rows:
+        if not _is_browser_title(r["source_app"]):
             continue
-        db.execute(
-            """
-            INSERT INTO observations
-                (user_id, browsing_event_id, kind, caption, topics, observed_at,
-                 embedding, metadata)
-            VALUES (%s, %s, 'browsing', %s, %s, %s, %s::vector, %s::jsonb)
-            """,
-            [user_id, b["id"], text, [b["domain"]], b["visited_at"], db.vec_lit(vec),
-             db._jsonb({"time_spent_sec": b["time_spent_sec"], "url": b["url"]})],
-        )
-        created += 1
-    return created
+        url = _recent_event_url(user_id, r["observed_at"])
+        if url:
+            db.execute("UPDATE observations SET url = %s WHERE id = %s", [url, r["id"]])
+            filled += 1
+    return filled
 
 
 def _find_clusters(user_id: uuid.UUID) -> list[list[dict]]:
