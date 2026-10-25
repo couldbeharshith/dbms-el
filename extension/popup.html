@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      width: 260px; margin: 0; padding: 14px;
+      font: 13px/1.5 system-ui, sans-serif;
+      background: #0f1117; color: #e5e7eb;
+    }
+    h1 { font-size: 14px; margin: 0 0 2px; display: flex; align-items: center; gap: 6px; }
+    .sub { color: #9ca3af; font-size: 11px; margin-bottom: 12px; }
+    .row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 0; border-bottom: 1px solid #1f2430;
+    }
+    .row:last-of-type { border-bottom: none; }
+    .toggle { cursor: pointer; font-weight: 600; padding: 2px 8px; border-radius: 6px; }
+    .on  { color: #34d399; background: rgba(52,211,153,.12); }
+    .off { color: #f87171; background: rgba(248,113,113,.12); }
+    .stat { text-align: center; margin: 12px 0; }
+    .stat b { font-size: 22px; display: block; }
+    .stat span { color: #9ca3af; font-size: 11px; }
+    button {
+      width: 100%; padding: 8px; border: 1px solid #2b3242; border-radius: 8px;
+      background: #1a1f2b; color: #e5e7eb; cursor: pointer; font-size: 12px;
+    }
+    button:hover { background: #232a3a; }
+    .err { color: #f87171; font-size: 11px; text-align: center; }
+  </style>
+</head>
+<body>
+  <h1>🧠 Memory Layer</h1>
+  <div class="sub">DBMS-EL — personalized context for chatbots</div>
+
+  <div class="row">
+    <span>Tracking</span>
+    <span class="toggle" id="trackingToggle">ON</span>
+  </div>
+  <div class="row">
+    <span>Context injection</span>
+    <span class="toggle" id="injectionToggle">ON</span>
+  </div>
+  <div class="row">
+    <span>Screenshots</span>
+    <span style="color:#9ca3af">Windows App</span>
+  </div>
+
+  <div class="stat">
+    <b id="eventCount">–</b>
+    <span>events in the last 24 h</span>
+  </div>
+  <div class="err" id="err"></div>
+
+  <button id="openApp">Open Windows App</button>
+
+  <script src="popup.js"></script>
+</body>
+</html>

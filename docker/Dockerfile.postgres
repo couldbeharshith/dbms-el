@@ -1,0 +1,15 @@
+# postgres:17 + pgvector + PostGIS (from the official PGDG apt repository).
+# Replaces the vanilla my-postgres container with the same name/port/creds/volume.
+FROM postgres:17
+
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends curl ca-certificates; \
+    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /etc/apt/trusted.gpg.d/pgdg.asc; \
+    . /etc/os-release; \
+    echo "deb http://apt.postgresql.org/pub/repos/apt $VERSION_CODENAME-pgdg main" > /etc/apt/sources.list.d/pgdg.list; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        postgresql-17-pgvector \
+        postgresql-17-postgis-3; \
+    rm -rf /var/lib/apt/lists/*

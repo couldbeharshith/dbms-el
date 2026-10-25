@@ -1,0 +1,29 @@
+# --- user scratch ---
+temp/
+
+# --- python (root uv project) ---
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+uv.lock
+
+# --- secrets & runtime artifacts (key, encrypted screenshots, HF cache) ---
+.env
+data/
+
+# --- editors / tooling ---
+.vscode/
+.cursor/
+.zcode/
+
+# --- node / electron / vite ---
+node_modules/
+desktop/dist/
+desktop/out/
+
+# --- OS junk ---
+Thumbs.db
+Desktop.ini
+.DS_Store

@@ -1,0 +1,32 @@
+[project]
+name = "dbms-el"
+version = "0.1.0"
+description = ""
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "cryptography>=50.0.2",
+    "fastapi>=0.162.0",
+    "httpx>=0.28.1",
+    "huggingface-hub>=2.3.0",
+    "numpy>=2.5.4",
+    "openai>=3.37.0",
+    "peft>=0.21.2",
+    "pillow>=13.0.0",
+    "psycopg[binary,pool]>=3.3.6",
+    "python-dotenv>=1.2.4",
+    "requests>=2.34.2",
+    "torch==2.14.1",
+    "torchvision",
+    "transformers>=5.20.2",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu126" }]
+torchvision = [{ index = "pytorch-cu126" }]
