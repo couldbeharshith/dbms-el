@@ -16,13 +16,16 @@ async def list_memories(request: Request, limit: int = 200):
     user = request.app.state.user
     rows = db.query(
         """
-        SELECT m.id, m.content, m.importance, m.hit_count, m.last_retrieved_at,
-               m.created_at, m.updated_at, m.metadata,
-               count(mo.observation_id) AS evidence_count
+        SELECT m.id, m.content, m.importance, u.hit_count, u.last_retrieved_at,
+               m.created_at, m.updated_at, m.source,
+               (SELECT count(*) FROM memory_observations mo
+                 WHERE mo.memory_id = m.id) AS evidence_count,
+               (SELECT coalesce(array_agg(t.topic), '{}') FROM
+                 (SELECT topic FROM v_memory_topics vt WHERE vt.memory_id = m.id
+                  ORDER BY uses DESC, topic LIMIT 5) t) AS topics
         FROM memories m
-        LEFT JOIN memory_observations mo ON mo.memory_id = m.id
+        JOIN v_memory_usage u ON u.memory_id = m.id
         WHERE m.user_id = %s
-        GROUP BY m.id
         ORDER BY m.updated_at DESC
         LIMIT %s
         """,

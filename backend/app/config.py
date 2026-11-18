@@ -35,9 +35,13 @@ DEFAULT_USERNAME = os.getenv("DEFAULT_USERNAME", "harshith")
 
 # Consolidation tuning (kept here so the "simple rule/score" is visible in one place).
 CONSOLIDATION_INTERVAL_SEC = 120
-CLUSTER_SIMILARITY_THRESHOLD = 0.78
-CLUSTER_MIN_OBSERVATIONS = 3
-MEMORY_MERGE_SIMILARITY = 0.85
+# Measured on real captions (Jina v5): same-topic pairs 0.30-0.80, cross-topic
+# <= 0.37. Clustering is average-linkage (observation vs running cluster
+# centroid), so 0.5 groups a topic's variants without merging distinct topics.
+CLUSTER_SIMILARITY_THRESHOLD = 0.50
+CLUSTER_MIN_OBSERVATIONS = 2
+# Centroid -> existing memory match (used only when no evidence links match).
+MEMORY_MERGE_SIMILARITY = 0.70
 # Memory-to-memory duplicate suppression (same text granularity, reliable):
 # a candidate whose embedding is this close to an existing memory is linked to
 # it instead of inserting a near-identical row; the periodic dedupe pass folds

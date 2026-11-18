@@ -35,10 +35,11 @@ async def patch_settings(payload: SettingsPatch, request: Request):
     if "retention_days" in updates:
         updates["retention_days"] = max(1, min(365, updates["retention_days"]))
     merged.update(updates)
-    db.execute(
-        "UPDATE users SET settings = %s::jsonb WHERE id = %s",
-        [db._jsonb(merged), user["id"]],
-    )
+    if updates:
+        # Column names come from the pydantic model's fields, never from user input.
+        assigns = ", ".join(f"{c} = %s" for c in updates)
+        db.execute(f"UPDATE users SET {assigns} WHERE id = %s",
+                   [*updates.values(), user["id"]])
     request.app.state.user["settings"] = merged
     return {"settings": merged}
 

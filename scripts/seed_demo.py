@@ -97,6 +97,12 @@ def make_fake_screenshot(title: str) -> bytes:
     return buf.getvalue()
 
 
+def _add_topics(observation_id, topics) -> None:
+    for t in sorted(set(topics)):
+        db.execute("INSERT INTO observation_topics (observation_id, topic) VALUES (%s,%s) "
+                   "ON CONFLICT DO NOTHING", [observation_id, t])
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--reset", action="store_true", help="delete all data first")
@@ -118,11 +124,11 @@ def main() -> None:
     print(f"Embedding ready on {embed.device}")
 
     # --- browsing events -----------------------------------------------------
-    rows = [[uid, u, dom, t, NOW - timedelta(minutes=m), dwell, "seed-demo",
-             db._jsonb({"seed": True})] for (u, dom, t, m, dwell) in EVENTS]
+    rows = [[uid, u, t, NOW - timedelta(minutes=m), dwell, "seed-demo"]
+            for (u, dom, t, m, dwell) in EVENTS]  # domain is derived from url
     db.executemany(
-        "INSERT INTO browsing_events (user_id, url, domain, title, visited_at, "
-        "time_spent_sec, session_id, metadata) VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb)",
+        "INSERT INTO browsing_events (user_id, url, title, visited_at, "
+        "time_spent_sec, session_id) VALUES (%s,%s,%s,%s,%s,%s)",
         rows,
     )
     print(f"Inserted {len(rows)} browsing events")
@@ -139,39 +145,39 @@ def main() -> None:
         import hashlib
         db.execute(
             "INSERT INTO screenshots (id, user_id, captured_at, file_path, sha256, "
-            "size_bytes, width, height, source_app, metadata) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)",
+            "size_bytes, width, height, source_app) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             [sid, uid, NOW - timedelta(minutes=minutes_ago), f"screenshots/{sid}.enc",
-             hashlib.sha256(png).hexdigest(), len(png), 960, 600, src,
-             db._jsonb({"seed": True})],
+             hashlib.sha256(png).hexdigest(), len(png), 960, 600, src],
         )
         doc = f"{caption}\n\nVisible text: {ocr}"
         text_vec = embed.embed_document_sync(doc)
         image_vec = embed.embed_image_sync(Image.open(io.BytesIO(png)))
         row = db.query_one(
-            "INSERT INTO observations (user_id, screenshot_id, kind, caption, "
-            "ocr_encrypted, topics, observed_at, embedding, image_embedding, metadata) "
-            "VALUES (%s,%s,'screenshot',%s,%s,%s,%s,%s::vector,%s::vector,%s::jsonb) RETURNING id",
-            [uid, sid, caption, crypto.encrypt(ocr.encode()), topics,
+            "INSERT INTO observations (user_id, screenshot_id, caption, "
+            "ocr_encrypted, observed_at, embedding, image_embedding) "
+            "VALUES (%s,%s,%s,%s,%s,%s::vector,%s::vector) RETURNING id",
+            [uid, sid, caption, crypto.encrypt(ocr.encode()),
              NOW - timedelta(minutes=minutes_ago), db.vec_lit(text_vec),
-             db.vec_lit(image_vec), db._jsonb({"seed": True})],
+             db.vec_lit(image_vec)],
         )
+        _add_topics(row["id"], topics)
         obs_ids.append(row["id"])
         shot_event = min(shot_event + 1, len(event_ids) - 1)
         print(f"  observation: {caption[:70]}…")
 
     # also one browsing observation linked to an event (demonstrates that kind)
     browsed = db.query_one(
-        "SELECT id, domain, title, time_spent_sec, visited_at FROM browsing_events "
+        "SELECT id, domain, title, time_spent_sec, visited_at FROM v_browsing_events "
         "WHERE session_id='seed-demo' ORDER BY time_spent_sec DESC LIMIT 1")
     text = f"User spent {browsed['time_spent_sec']}s on {browsed['domain']} — {browsed['title']}"
     vec = embed.embed_document_sync(text)
     row = db.query_one(
-        "INSERT INTO observations (user_id, browsing_event_id, kind, caption, topics, "
-        "observed_at, embedding, metadata) VALUES (%s,%s,'browsing',%s,%s,%s,%s::vector,%s::jsonb) RETURNING id",
-        [uid, browsed["id"], text, [browsed["domain"]], browsed["visited_at"],
-         db.vec_lit(vec), db._jsonb({"time_spent_sec": browsed["time_spent_sec"], "seed": True})],
+        "INSERT INTO observations (user_id, browsing_event_id, caption, "
+        "observed_at, embedding) VALUES (%s,%s,%s,%s,%s::vector) RETURNING id",
+        [uid, browsed["id"], text, browsed["visited_at"], db.vec_lit(vec)],
     )
+    _add_topics(row["id"], [browsed["domain"]])
     obs_ids.append(row["id"])
     print(f"  browsing observation: {text[:70]}…")
 
@@ -181,9 +187,9 @@ def main() -> None:
     for i, (content, importance, topics) in enumerate(MEMORIES):
         vec = embed.embed_document_sync(content)
         row = db.query_one(
-            "INSERT INTO memories (user_id, content, embedding, importance, metadata) "
-            "VALUES (%s,%s,%s::vector,%s,%s::jsonb) RETURNING id",
-            [uid, content, db.vec_lit(vec), importance, db._jsonb({"topics": topics, "source": "seed"})],
+            "INSERT INTO memories (user_id, content, embedding, importance, source) "
+            "VALUES (%s,%s,%s::vector,%s,'seed') RETURNING id",
+            [uid, content, db.vec_lit(vec), importance],
         )
         evidence = obs_ids[i * per: (i + 1) * per] or [obs_ids[-1]]
         for oid in evidence:

@@ -17,6 +17,7 @@ data/
 .vscode/
 .cursor/
 .zcode/
+.kiro/
 
 # --- node / electron / vite ---
 node_modules/

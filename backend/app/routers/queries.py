@@ -34,9 +34,12 @@ async def list_queries(request: Request, limit: int = 50):
     user = request.app.state.user
     rows = db.query(
         """
-        SELECT id, query_text, site, context_text, retrieved_memory_ids, created_at
-        FROM chat_queries WHERE user_id = %s
-        ORDER BY created_at DESC LIMIT %s
+        SELECT q.id, q.query_text, q.site, q.context_text, q.created_at,
+               coalesce((SELECT array_agg(qm.memory_id ORDER BY qm.rank)
+                         FROM query_memories qm WHERE qm.query_id = q.id), '{}')
+                   AS retrieved_memory_ids
+        FROM chat_queries q WHERE q.user_id = %s
+        ORDER BY q.created_at DESC LIMIT %s
         """,
         [user["id"], min(limit, 200)],
     )

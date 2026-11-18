@@ -24,7 +24,7 @@ class ScreenshotIn(BaseModel):
     height: int | None = None
     source_app: str | None = None
     captured_at: dt.datetime | None = None
-    metadata: dict = {}
+    metadata: dict = {}  # ignored (no JSON blobs in the normalized schema)
 
 
 @router.post("/screenshots")
@@ -68,14 +68,13 @@ async def upload_screenshot(payload: ScreenshotIn, request: Request):
         """
         INSERT INTO screenshots
             (id, user_id, captured_at, file_path, sha256, size_bytes, width, height,
-             source_app, encrypted, phash, metadata)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s::jsonb)
+             source_app, encrypted, phash)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s)
         RETURNING id, captured_at, source_app
         """,
         [sid, user["id"], payload.captured_at or dt.datetime.now(dt.timezone.utc),
          rel_path, sha, len(image_bytes),
-         payload.width, payload.height, payload.source_app, ph,
-         db._jsonb(payload.metadata)],
+         payload.width, payload.height, payload.source_app, ph],
     )
 
     # Caption + embed + observe happens asynchronously.
@@ -130,10 +129,9 @@ async def list_screenshots(request: Request, limit: int = 60, hours: int | None 
     rows = db.query(
         f"""
         SELECT s.id, s.captured_at, s.width, s.height, s.source_app, s.size_bytes,
-               s.metadata,
                (SELECT o.caption FROM observations o
                  WHERE o.screenshot_id = s.id LIMIT 1) AS caption,
-               (SELECT o.topics FROM observations o
+               (SELECT o.topics FROM v_observations o
                  WHERE o.screenshot_id = s.id LIMIT 1) AS topics,
                EXISTS (SELECT 1 FROM observations o WHERE o.screenshot_id = s.id) AS processed
         FROM screenshots s
@@ -152,10 +150,10 @@ async def screenshot_detail(sid: uuid.UUID, request: Request):
     row = db.query_one(
         """
         SELECT s.id, s.captured_at, s.width, s.height, s.source_app, s.size_bytes,
-               s.encrypted, s.metadata,
+               s.encrypted,
                o.id AS observation_id, o.caption, o.topics, o.observed_at, o.url
         FROM screenshots s
-        LEFT JOIN observations o ON o.screenshot_id = s.id
+        LEFT JOIN v_observations o ON o.screenshot_id = s.id
         WHERE s.id = %s AND s.user_id = %s
         """,
         [sid, user["id"]],

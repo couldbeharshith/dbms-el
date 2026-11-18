@@ -34,7 +34,7 @@ async def recall(request: Request, q: str, limit: int = 24):
                1 - (o.embedding <=> %s::vector) AS text_sim,
                CASE WHEN o.image_embedding IS NOT NULL
                     THEN 1 - (o.image_embedding <=> %s::vector) END AS image_sim
-        FROM observations o
+        FROM v_observations o
         LEFT JOIN screenshots s ON s.id = o.screenshot_id
         WHERE o.user_id = %s AND o.embedding IS NOT NULL
         ORDER BY GREATEST(1 - (o.embedding <=> %s::vector),

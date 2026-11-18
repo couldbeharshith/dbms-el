@@ -37,17 +37,18 @@ def _is_browser_title(title: str | None) -> bool:
     return tail in config.BROWSER_TITLE_TAILS
 
 
-def _recent_event_url(user_id, at: datetime) -> str | None:
-    """URL of the page the user was on at `at` (browser events within 15 min
-    before the capture; the extension flushes dwell in 30s batches)."""
+def _recent_event_id(user_id, at: datetime) -> int | None:
+    """Browsing event of the page the user was on at `at` (browser events
+    within 15 min before the capture; the extension flushes dwell in 30s
+    batches)."""
     row = db.query_one(
-        "SELECT url FROM browsing_events "
+        "SELECT id FROM browsing_events "
         "WHERE user_id = %s AND visited_at <= %s "
         "AND visited_at > %s - interval '15 minutes' "
         "ORDER BY visited_at DESC LIMIT 1",
         [user_id, at, at],
     )
-    return row["url"] if row else None
+    return row["id"] if row else None
 
 
 # ---------------------------------------------------------------------------
@@ -89,31 +90,42 @@ async def process_screenshot(screenshot_id: uuid.UUID) -> None:
         return
 
     # Display-only provenance: which page was on screen (browser in foreground).
-    url = None
     if _is_browser_title(row["source_app"]):
-        url = _recent_event_url(row["user_id"], row["captured_at"])
+        event_id = _recent_event_id(row["user_id"], row["captured_at"])
+        if event_id:
+            db.execute("UPDATE screenshots SET browsing_event_id = %s WHERE id = %s",
+                       [event_id, screenshot_id])
 
     try:
-        db.execute(
+        obs = db.query_one(
             """
             INSERT INTO observations
-                (user_id, screenshot_id, kind, caption, ocr_encrypted, topics,
-                 observed_at, embedding, image_embedding, url, metadata)
-            VALUES (%s, %s, 'screenshot', %s, %s, %s, %s, %s::vector, %s::vector, %s, %s::jsonb)
+                (user_id, screenshot_id, caption, ocr_encrypted, importance_hint,
+                 observed_at, embedding, image_embedding)
+            VALUES (%s, %s, %s, %s, %s, %s, %s::vector, %s::vector)
+            ON CONFLICT (screenshot_id) WHERE screenshot_id IS NOT NULL DO NOTHING
+            RETURNING id
             """,
             [
                 row["user_id"],
                 screenshot_id,
                 result["caption"],
                 crypto.encrypt(result["ocr_text"].encode()) if result["ocr_text"] else None,
-                result["topics"],
+                result["importance_hint"],
                 row["captured_at"],
                 db.vec_lit(text_vec),
                 db.vec_lit(image_vec),
-                url,
-                db._jsonb({"importance_hint": result["importance_hint"], "source_app": row["source_app"]}),
             ],
         )
+        if obs is None:  # another task already processed this screenshot
+            return
+        topics = sorted({t.strip() for t in result["topics"] if t and t.strip()})
+        if topics:
+            db.executemany(
+                "INSERT INTO observation_topics (observation_id, topic) VALUES (%s, %s) "
+                "ON CONFLICT DO NOTHING",
+                [[obs["id"], t] for t in topics],
+            )
     except ForeignKeyViolation:
         # The screenshot was deleted (History / data controls) while this task
         # was captioning — discarding the observation is the correct outcome.
@@ -144,19 +156,25 @@ async def consolidate(user_id: uuid.UUID, *, fast: bool = False) -> dict:
         stats["clusters"] += 1
         centroid = _centroid([m["vec"] for m in members])
 
-        # Existing memory covering this cluster? (centroid pre-filter)
+        # Existing memory covering this cluster? First by evidence: the memory
+        # already linked to most of these observations (stable across passes).
         existing = db.query_one(
-            "SELECT id, content, importance FROM memories "
-            "WHERE user_id = %s AND embedding <=> %s::vector <= %s "
-            "ORDER BY embedding <=> %s::vector LIMIT 1",
-            [user_id, db.vec_lit(centroid), 1 - config.MEMORY_MERGE_SIMILARITY,
-             db.vec_lit(centroid)],
+            "SELECT m.id, m.content, m.importance FROM memories m "
+            "JOIN memory_observations mo ON mo.memory_id = m.id "
+            "WHERE m.user_id = %s AND mo.observation_id = ANY(%s::uuid[]) "
+            "GROUP BY m.id ORDER BY count(*) DESC, m.created_at LIMIT 1",
+            [user_id, [str(m["id"]) for m in members]],
         )
+        if existing is None:  # else by meaning (centroid vs memory embedding)
+            existing = db.query_one(
+                "SELECT id, content, importance FROM memories "
+                "WHERE user_id = %s AND embedding <=> %s::vector <= %s "
+                "ORDER BY embedding <=> %s::vector LIMIT 1",
+                [user_id, db.vec_lit(centroid), 1 - config.MEMORY_MERGE_SIMILARITY,
+                 db.vec_lit(centroid)],
+            )
 
         if existing:
-            _link_evidence(existing["id"], members)
-            stats["evidence_links"] += len(members)
-
             # LLM-merge only when some evidence is not already linked —
             # recurring identical activity costs zero API calls.
             already = {
@@ -166,6 +184,8 @@ async def consolidate(user_id: uuid.UUID, *, fast: bool = False) -> dict:
                     [existing["id"]])
             }
             new_members = [m for m in members if m["id"] not in already]
+            _link_evidence(existing["id"], new_members)
+            stats["evidence_links"] += len(new_members)
             if not new_members:
                 stats["clusters_unchanged"] += 1
                 continue
@@ -215,10 +235,9 @@ async def consolidate(user_id: uuid.UUID, *, fast: bool = False) -> dict:
 
         importance = min(0.3 + 0.08 * len(members) + 0.2 * _recency_bonus(members), 0.95)
         row = db.query_one(
-            "INSERT INTO memories (user_id, content, embedding, importance, metadata) "
-            "VALUES (%s, %s, %s::vector, %s, %s::jsonb) RETURNING id",
-            [user_id, content, db.vec_lit(vec), importance,
-             db._jsonb({"topics": _union_topics(members), "source": "auto"})],
+            "INSERT INTO memories (user_id, content, embedding, importance, source) "
+            "VALUES (%s, %s, %s::vector, %s, 'auto') RETURNING id",
+            [user_id, content, db.vec_lit(vec), importance],
         )
         _link_evidence(row["id"], members)
         stats["evidence_links"] += len(members)
@@ -242,7 +261,7 @@ def _dedupe_memories(user_id: uuid.UUID) -> int:
     oldest one: evidence links move, importance/hit_count carry over. Pure
     vectors + SQL — zero LLM cost."""
     rows = db.query(
-        "SELECT id, content, importance, hit_count, created_at, embedding::text AS embedding "
+        "SELECT id, content, importance, created_at, embedding::text AS embedding "
         "FROM memories WHERE user_id = %s ORDER BY created_at",
         [user_id],
     )
@@ -268,9 +287,15 @@ def _dedupe_memories(user_id: uuid.UUID) -> int:
             [target["id"], m["id"]],
         )
         db.execute(
-            "UPDATE memories SET importance = greatest(importance, %s), "
-            "hit_count = hit_count + %s WHERE id = %s",
-            [m["importance"], m["hit_count"], target["id"]],
+            "UPDATE memories SET importance = greatest(importance, %s) WHERE id = %s",
+            [m["importance"], target["id"]],
+        )
+        # Carry retrieval history over so the keeper's derived hit count stays right.
+        db.execute(
+            "INSERT INTO query_memories (query_id, memory_id, rank, similarity) "
+            "SELECT query_id, %s, rank, similarity FROM query_memories WHERE memory_id = %s "
+            "ON CONFLICT DO NOTHING",
+            [target["id"], m["id"]],
         )
         db.execute("DELETE FROM memories WHERE id = %s", [m["id"]])
         removed += 1
@@ -279,22 +304,22 @@ def _dedupe_memories(user_id: uuid.UUID) -> int:
 
 
 def _backfill_urls(user_id: uuid.UUID) -> int:
-    """Attach URLs to screenshot observations that missed theirs at processing
-    time (the covering browsing_events row arrives up to 30s later)."""
+    """Link screenshots to the page that was on screen when the link was missed
+    at processing time (the covering browsing_events row arrives up to 30s later)."""
     rows = db.query(
-        "SELECT id, observed_at, metadata->>'source_app' AS source_app "
-        "FROM observations "
-        "WHERE user_id = %s AND kind = 'screenshot' AND url IS NULL "
-        "AND observed_at > now() - interval '24 hours'",
+        "SELECT id, captured_at, source_app FROM screenshots "
+        "WHERE user_id = %s AND browsing_event_id IS NULL "
+        "AND captured_at > now() - interval '24 hours'",
         [user_id],
     )
     filled = 0
     for r in rows:
         if not _is_browser_title(r["source_app"]):
             continue
-        url = _recent_event_url(user_id, r["observed_at"])
-        if url:
-            db.execute("UPDATE observations SET url = %s WHERE id = %s", [url, r["id"]])
+        event_id = _recent_event_id(user_id, r["captured_at"])
+        if event_id:
+            db.execute("UPDATE screenshots SET browsing_event_id = %s WHERE id = %s",
+                       [event_id, r["id"]])
             filled += 1
     return filled
 
@@ -303,7 +328,7 @@ def _find_clusters(user_id: uuid.UUID) -> list[list[dict]]:
     rows = db.query(
         """
         SELECT id, caption, topics, observed_at, embedding::text AS embedding
-        FROM observations
+        FROM v_observations
         WHERE user_id = %s AND observed_at > now() - interval '24 hours'
               AND embedding IS NOT NULL
         ORDER BY observed_at DESC
@@ -316,21 +341,23 @@ def _find_clusters(user_id: uuid.UUID) -> list[list[dict]]:
         vec = np.array([float(x) for x in r["embedding"].strip("[]").split(",")], dtype=np.float32)
         obs.append({**r, "vec": vec})
 
-    unassigned = list(obs)
-    clusters: list[list[dict]] = []
-    while unassigned:
-        seed = unassigned.pop(0)
-        members = [seed]
-        rest = []
-        for o in unassigned:
-            if _cosine(seed["vec"], o["vec"]) >= config.CLUSTER_SIMILARITY_THRESHOLD:
-                members.append(o)
-            else:
-                rest.append(o)
-        unassigned = rest
-        if len(members) >= config.CLUSTER_MIN_OBSERVATIONS:
-            clusters.append(members)
-    return clusters
+    # Average-linkage: each observation joins the cluster whose running centroid
+    # it is closest to (if >= threshold), else starts a new cluster. Oldest
+    # first so cluster membership is stable across passes.
+    groups: list[dict] = []  # {"members": [...], "sum": vector}
+    for o in reversed(obs):
+        best, best_sim = None, config.CLUSTER_SIMILARITY_THRESHOLD
+        for g in groups:
+            sim = _cosine(g["sum"], o["vec"])
+            if sim >= best_sim:
+                best, best_sim = g, sim
+        if best is None:
+            groups.append({"members": [o], "sum": o["vec"].copy()})
+        else:
+            best["members"].append(o)
+            best["sum"] = best["sum"] + o["vec"]
+    return [g["members"] for g in groups
+            if len(g["members"]) >= config.CLUSTER_MIN_OBSERVATIONS]
 
 
 def _cosine(a: np.ndarray, b: np.ndarray) -> float:
@@ -351,11 +378,3 @@ def _recency_bonus(members: list[dict]) -> float:
     ages_h = [(now - m["observed_at"]).total_seconds() / 3600 for m in members]
     return float(np.mean([np.exp(-a / 48.0) for a in ages_h]))
 
-
-def _union_topics(members: list[dict]) -> list[str]:
-    seen: list[str] = []
-    for m in members:
-        for t in m.get("topics") or []:
-            if t not in seen:
-                seen.append(t)
-    return seen[:5]

@@ -2,7 +2,6 @@
 0.6*cosine + 0.25*importance + 0.15*recency, and build the context block the
 Chrome extension appends after the user's message."""
 
-import json
 import logging
 import uuid
 
@@ -44,20 +43,20 @@ async def retrieve_context(user_id: uuid.UUID, query: str, site: str | None) -> 
     else:
         context_text = ""
 
-    used_ids = [r["id"] for r in used]
-    db.execute(
+    qrow = db.query_one(
         """
-        INSERT INTO chat_queries (user_id, query_text, query_embedding, site,
-                                  context_text, retrieved_memory_ids)
-        VALUES (%s, %s, %s::vector, %s, %s, %s::jsonb)
+        INSERT INTO chat_queries (user_id, query_text, query_embedding, site, context_text)
+        VALUES (%s, %s, %s::vector, %s, %s)
+        RETURNING id
         """,
-        [user_id, query, qlit, site, context_text, json.dumps([str(i) for i in used_ids])],
+        [user_id, query, qlit, site, context_text],
     )
-    if used_ids:
+    # Which memories were retrieved (usage stats are derived from these rows).
+    for rank, r in enumerate(used, start=1):
         db.execute(
-            "UPDATE memories SET hit_count = hit_count + 1, last_retrieved_at = now() "
-            "WHERE id = ANY(%s::uuid[])",
-            [[str(i) for i in used_ids]],
+            "INSERT INTO query_memories (query_id, memory_id, rank, similarity) "
+            "VALUES (%s, %s, %s, %s)",
+            [qrow["id"], r["id"], rank, float(r["sim"])],
         )
 
     log.info("Retrieved %d memories for %r (confident=%s)", len(used), query[:60], confident)

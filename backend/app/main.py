@@ -39,7 +39,7 @@ async def _retention_loop(user_id):
     while True:
         try:
             days = db.query_one(
-                "SELECT (settings->>'retention_days')::int AS d FROM users WHERE id = %s",
+                "SELECT retention_days AS d FROM users WHERE id = %s",
                 [user_id],
             )["d"]
             db.execute(

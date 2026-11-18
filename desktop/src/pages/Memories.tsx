@@ -9,7 +9,8 @@ interface MemoryRow {
   last_retrieved_at: string | null;
   created_at: string;
   updated_at: string;
-  metadata: { topics?: string[]; source?: string };
+  source: string;
+  topics: string[];
   evidence_count: number;
 }
 
@@ -106,7 +107,7 @@ function MemoryCard({ m, onDelete }: { m: MemoryRow; onDelete: (id: string) => v
           <div className="h-full rounded-full bg-gradient-to-r from-sky-500 to-blue-500" style={{ width: `${m.importance * 100}%` }} />
         </div>
         <span className="text-[10px] text-slate-500">importance {(m.importance * 100).toFixed(0)}%</span>
-        {m.metadata.topics?.map((t) => (
+        {m.topics?.map((t) => (
           <span key={t} className="rounded-full bg-blue-500/12 px-2 py-0.5 text-[10px] text-blue-300">{t}</span>
         ))}
         <div className="flex-1" />

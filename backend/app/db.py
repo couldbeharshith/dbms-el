@@ -68,37 +68,28 @@ def vec_lit(vec: Sequence[float]) -> str:
     return "[" + ",".join(f"{float(x):.8g}" for x in vec) + "]"
 
 
-DEFAULT_SETTINGS = {
-    "tracking_enabled": True,
-    "screenshots_enabled": True,
-    "screenshot_interval_sec": 30,
-    "location_enabled": False,
-    "injection_enabled": True,
-    "retention_days": 14,
-}
+SETTING_COLUMNS = (
+    "tracking_enabled", "screenshots_enabled", "screenshot_interval_sec",
+    "location_enabled", "injection_enabled", "retention_days",
+)
 
 
 def get_default_user() -> dict:
-    row = query_one(
-        "INSERT INTO users (username) VALUES (%s) "
-        "ON CONFLICT (username) DO NOTHING "
-        "RETURNING id, username, settings",
+    """Default user row; the per-user settings columns are exposed as a
+    `settings` dict (the shape the API and clients use)."""
+    execute(
+        "INSERT INTO users (username) VALUES (%s) ON CONFLICT (username) DO NOTHING",
         [config.DEFAULT_USERNAME],
     )
-    if row is None:
-        row = query_one(
-            "SELECT id, username, settings FROM users WHERE username = %s",
-            [config.DEFAULT_USERNAME],
-        )
-    # Fill in any settings keys added after the row was first created.
-    merged = {**DEFAULT_SETTINGS, **(row["settings"] or {})}
-    if merged != row["settings"]:
-        execute(
-            "UPDATE users SET settings = %s::jsonb WHERE id = %s",
-            [_jsonb(merged), row["id"]],
-        )
-    row["settings"] = merged
-    return row
+    row = query_one(
+        f"SELECT id, username, {', '.join(SETTING_COLUMNS)} FROM users WHERE username = %s",
+        [config.DEFAULT_USERNAME],
+    )
+    return {
+        "id": row["id"],
+        "username": row["username"],
+        "settings": {c: row[c] for c in SETTING_COLUMNS},
+    }
 
 
 def _jsonb(obj: Any) -> str:

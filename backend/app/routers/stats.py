@@ -31,7 +31,7 @@ async def stats(request: Request):
     top_domains = db.query(
         """
         SELECT domain, count(*) AS visits, sum(time_spent_sec) AS total_sec
-        FROM browsing_events
+        FROM v_browsing_events
         WHERE user_id = %s AND visited_at > now() - interval '7 days'
         GROUP BY domain
         ORDER BY total_sec DESC NULLS LAST
@@ -53,9 +53,10 @@ async def stats(request: Request):
 
     recent_memories = db.query(
         """
-        SELECT id, content, importance, updated_at, hit_count
-        FROM memories WHERE user_id = %s
-        ORDER BY updated_at DESC LIMIT 8
+        SELECT m.id, m.content, m.importance, m.updated_at, u.hit_count
+        FROM memories m JOIN v_memory_usage u ON u.memory_id = m.id
+        WHERE m.user_id = %s
+        ORDER BY m.updated_at DESC LIMIT 8
         """,
         [uid],
     )
@@ -63,7 +64,7 @@ async def stats(request: Request):
     recent_events = db.query(
         """
         SELECT id, domain, title, time_spent_sec, visited_at
-        FROM browsing_events WHERE user_id = %s
+        FROM v_browsing_events WHERE user_id = %s
         ORDER BY visited_at DESC LIMIT 15
         """,
         [uid],
@@ -72,10 +73,10 @@ async def stats(request: Request):
     topics = db.query(
         """
         SELECT t.topic, count(*) AS uses
-        FROM memories m, jsonb_array_elements_text(m.metadata->'topics') AS t(topic)
+        FROM memories m JOIN v_memory_topics t ON t.memory_id = m.id
         WHERE m.user_id = %s
         GROUP BY t.topic
-        ORDER BY uses DESC LIMIT 10
+        ORDER BY uses DESC, t.topic LIMIT 10
         """,
         [uid],
     )
