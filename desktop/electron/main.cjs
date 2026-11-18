@@ -42,6 +42,16 @@ function createWindow() {
   mainWindow.webContents.on("console-message", (_e, level, message) => {
     if (level >= 2) console.error("renderer console:", message);
   });
+  // Ctrl +/- / 0 zoom (the app has no menu, so the built-in accelerators are absent).
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown" || !input.control) return;
+    const wc = mainWindow.webContents;
+    if (input.key === "+" || input.key === "=") wc.setZoomLevel(Math.min(wc.getZoomLevel() + 0.5, 4));
+    else if (input.key === "-" || input.key === "_") wc.setZoomLevel(Math.max(wc.getZoomLevel() - 0.5, -3));
+    else if (input.key === "0") wc.setZoomLevel(0);
+    else return;
+    event.preventDefault();
+  });
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -104,25 +114,35 @@ function foregroundTitle() {
   });
 }
 
+// Returns a status string: captured | duplicate | disabled | blacklisted | offline | busy | error
 async function captureOnce() {
-  if (capturing) return;
+  if (capturing) return "busy";
   capturing = true;
   try {
     const settings = await fetchSettings();
-    if (!settings) return; // backend down — skip this tick
-    if (!settings.screenshots_enabled) return;
+    if (!settings) return "offline"; // backend down — skip this tick
+    if (!settings.screenshots_enabled) return "disabled";
+
+    // Blacklist (MongoDB via backend): skip when the window title matches a phrase.
+    const title = await foregroundTitle();
+    try {
+      const bl = await fetch(`${API}/api/blacklist`).then((r) => r.json());
+      const t = (title || "").toLowerCase();
+      if (t && (bl.items || []).some((i) => t.includes(i.phrase))) return "blacklisted";
+    } catch {
+      /* blacklist unavailable -> backend also enforces it on upload */
+    }
 
     const sources = await desktopCapturer.getSources({
       types: ["screen"],
       thumbnailSize: { width: 1920, height: 1080 },
     });
-    if (!sources.length) return;
+    if (!sources.length) return "error";
     const primary = sources[0];
     const png = primary.thumbnail.toPNG();
     const size = primary.thumbnail.getSize();
-    const title = await foregroundTitle();
 
-    await fetch(`${API}/api/screenshots`, {
+    const res = await fetch(`${API}/api/screenshots`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -134,8 +154,14 @@ async function captureOnce() {
         metadata: { display: primary.display_id },
       }),
     });
+    const out = await res.json().catch(() => ({}));
+    if (out.skipped_blacklisted) return "blacklisted";
+    if (out.skipped_duplicate) return "duplicate";
+    if (out.accepted === false) return "disabled";
+    return res.ok ? "captured" : "error";
   } catch (e) {
     console.warn("capture failed:", e?.message || e);
+    return "error";
   } finally {
     capturing = false;
   }
@@ -160,6 +186,5 @@ ipcMain.handle("settings:set", async (_ev, patch) => {
   return r.json();
 });
 ipcMain.handle("capture:now", async () => {
-  await captureOnce();
-  return true;
+  return captureOnce();
 });

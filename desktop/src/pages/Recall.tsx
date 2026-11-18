@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { get, fmtTime } from "../api";
 import ShotModal, { ShotRow } from "../components/ShotModal";
+import Icon from "../components/Icon";
 
 interface RecallResult {
   observation_id: string;
@@ -51,7 +52,7 @@ export default function Recall() {
 
   return (
     <div className="mx-auto max-w-5xl p-8">
-      <h1 className="text-lg font-semibold">Recall</h1>
+      <h1 className="page-title">Recall</h1>
       <p className="mb-4 text-xs text-slate-500">
         Semantic search across every screenshot, caption and OCR text — describe what you remember
         ("code", "laptop prices", "python project") and open the screenshot.
@@ -62,7 +63,7 @@ export default function Recall() {
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder="Search your screen history…"
-        className="w-full rounded-xl border border-white/10 bg-[#12151d] px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:border-blue-500/50 focus:outline-none"
+        className="w-full rounded-xl surface px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:border-blue-500/50 focus:outline-none"
       />
 
       {results === null && !searching && (
@@ -93,7 +94,7 @@ export default function Recall() {
                   processed: true,
                 })
               }
-              className="group overflow-hidden rounded-xl border border-white/8 bg-[#12151d] text-left transition hover:border-blue-500/40"
+              className="group overflow-hidden rounded-xl surface text-left transition hover:border-blue-400/60"
             >
               {r.screenshot_id ? (
                 <img
@@ -102,7 +103,7 @@ export default function Recall() {
                   className="h-32 w-full object-cover"
                 />
               ) : (
-                <div className="flex h-32 items-center justify-center text-2xl text-slate-700">🗒</div>
+                <div className="flex h-32 items-center justify-center text-slate-700"><Icon name="image" className="h-8 w-8" /></div>
               )}
               <div className="p-2.5">
                 <div className="line-clamp-2 text-[11px] leading-4 text-slate-300">{r.caption || "—"}</div>
