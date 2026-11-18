@@ -56,7 +56,7 @@ export default function LockScreen({
     }
   };
 
-  const title = { signin: "Unlock DBMS-EL", signup: "Create your account", forgot: "Forgot PIN" }[mode];
+  const title = { signin: "Unlock Keepsake", signup: "Create your account", forgot: "Forgot PIN" }[mode];
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0b0e13]/55 backdrop-blur-xl">
