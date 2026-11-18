@@ -42,7 +42,7 @@ function Evidence({ memoryId }: { memoryId: string }) {
       {rows.map((e) => (
         <div key={e.observation_id} className="rounded-lg bg-black/25 p-2.5 text-[11px] leading-snug text-slate-400">
           <div className="mb-1 flex items-center gap-2">
-            <span className={`rounded px-1.5 py-0.5 text-[9px] uppercase ${e.observation_kind === "screenshot" ? "bg-purple-500/15 text-purple-300" : "bg-sky-500/15 text-sky-300"}`}>
+            <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${e.observation_kind === "screenshot" ? "bg-purple-500/15 text-purple-300" : "bg-sky-500/15 text-sky-300"}`}>
               {e.observation_kind}
             </span>
             <span className="text-slate-600">{fmtTime(e.observed_at)}</span>
@@ -70,7 +70,7 @@ function MemoryCard({ m, onDelete }: { m: MemoryRow; onDelete: (id: string) => v
   };
 
   return (
-    <div className="rounded-xl border border-white/8 bg-[#12151d] p-4">
+    <div className="rounded-xl surface p-4">
       {editing ? (
         <div>
           <textarea
@@ -104,7 +104,7 @@ function MemoryCard({ m, onDelete }: { m: MemoryRow; onDelete: (id: string) => v
 
       <div className="mt-3 flex items-center gap-3">
         <div className="h-1.5 w-32 overflow-hidden rounded-full bg-white/5">
-          <div className="h-full rounded-full bg-gradient-to-r from-sky-500 to-blue-500" style={{ width: `${m.importance * 100}%` }} />
+          <div className="h-full rounded-full bg-blue-500" style={{ width: `${m.importance * 100}%` }} />
         </div>
         <span className="text-[10px] text-slate-500">importance {(m.importance * 100).toFixed(0)}%</span>
         {m.topics?.map((t) => (
@@ -165,7 +165,7 @@ export default function Memories() {
   return (
     <div className="mx-auto max-w-3xl p-8">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Memories</h1>
+        <h1 className="page-title">Memories</h1>
         <button
           onClick={consolidate}
           disabled={busy}
@@ -176,7 +176,7 @@ export default function Memories() {
       </div>
 
       {memories.length === 0 && (
-        <div className="rounded-xl border border-white/8 bg-[#12151d] p-8 text-center text-xs text-slate-600">
+        <div className="rounded-xl surface p-8 text-center text-xs text-slate-600">
           No memories yet. Browse a topic for a while (or seed demo data), then click "Consolidate now".
         </div>
       )}

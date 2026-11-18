@@ -20,8 +20,8 @@ interface Stats {
 
 function Card({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (
-    <div className="rounded-xl border border-white/8 bg-[#12151d] p-4">
-      <div className="text-[11px] uppercase tracking-wider text-slate-500">{label}</div>
+    <div className="rounded-xl surface p-4">
+      <div className="text-[11px] font-semibold text-slate-500">{label}</div>
       <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
       {sub && <div className="mt-0.5 text-[11px] text-slate-500">{sub}</div>}
     </div>
@@ -45,7 +45,7 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto max-w-5xl p-8">
-      <h1 className="text-lg font-semibold">Dashboard</h1>
+      <h1 className="page-title">Dashboard</h1>
       <p className="mb-6 text-xs text-slate-500">
         last screenshot {fmtAgo(stats.pipeline.last_screenshot)} · last observation{" "}
         {fmtAgo(stats.pipeline.last_observation)} · last memory {fmtAgo(stats.pipeline.last_memory)}
@@ -60,8 +60,8 @@ export default function Dashboard() {
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-5">
         {/* activity chart */}
-        <div className="rounded-xl border border-white/8 bg-[#12151d] p-4 lg:col-span-3">
-          <div className="mb-3 text-[11px] uppercase tracking-wider text-slate-500">
+        <div className="rounded-xl surface p-4 lg:col-span-3">
+          <div className="mb-3 text-[11px] font-semibold text-slate-500">
             Browsing dwell · last 24 h (minutes)
           </div>
           {stats.hourly.length === 0 ? (
@@ -100,8 +100,8 @@ export default function Dashboard() {
 
         {/* topics + memories */}
         <div className="space-y-6 lg:col-span-2">
-          <div className="rounded-xl border border-white/8 bg-[#12151d] p-4">
-            <div className="mb-2 text-[11px] uppercase tracking-wider text-slate-500">Recent topics</div>
+          <div className="rounded-xl surface p-4">
+            <div className="mb-2 text-[11px] font-semibold text-slate-500">Recent topics</div>
             <div className="flex flex-wrap gap-1.5">
               {stats.topics.length === 0 && <span className="text-xs text-slate-600">—</span>}
               {stats.topics.map((t) => (
@@ -111,8 +111,8 @@ export default function Dashboard() {
               ))}
             </div>
           </div>
-          <div className="rounded-xl border border-white/8 bg-[#12151d] p-4">
-            <div className="mb-2 text-[11px] uppercase tracking-wider text-slate-500">Latest memories</div>
+          <div className="rounded-xl surface p-4">
+            <div className="mb-2 text-[11px] font-semibold text-slate-500">Latest memories</div>
             <div className="space-y-2">
               {stats.recent_memories.length === 0 && (
                 <div className="text-xs text-slate-600">No memories yet</div>
@@ -132,8 +132,8 @@ export default function Dashboard() {
       </div>
 
       {/* recent activity */}
-      <div className="mt-6 rounded-xl border border-white/8 bg-[#12151d] p-4">
-        <div className="mb-2 text-[11px] uppercase tracking-wider text-slate-500">Recent activity</div>
+      <div className="mt-6 rounded-xl surface p-4">
+        <div className="mb-2 text-[11px] font-semibold text-slate-500">Recent activity</div>
         <div className="divide-y divide-white/5">
           {stats.recent_events.length === 0 && <div className="py-3 text-xs text-slate-600">Nothing yet — start browsing with the extension enabled.</div>}
           {stats.recent_events.map((e) => (

@@ -38,7 +38,7 @@ export default function History() {
   return (
     <div className="mx-auto max-w-5xl p-8">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-lg font-semibold">History</h1>
+        <h1 className="page-title">History</h1>
         <div className="flex rounded-lg border border-white/10 p-0.5 text-xs">
           {(["browsing", "screenshots"] as const).map((t) => (
             <button
@@ -57,17 +57,17 @@ export default function History() {
           <select
             value={domainFilter}
             onChange={(e) => setDomainFilter(e.target.value)}
-            className="mb-3 rounded-lg border border-white/10 bg-[#12151d] px-3 py-1.5 text-xs text-slate-300"
+            className="mb-3 rounded-lg surface px-3 py-1.5 text-xs text-slate-300"
           >
             <option value="">All domains</option>
             {domains.map((d) => (
               <option key={d} value={d}>{d}</option>
             ))}
           </select>
-          <div className="overflow-hidden rounded-xl border border-white/8 bg-[#12151d]">
+          <div className="overflow-hidden rounded-xl surface">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-white/8 text-left text-[10px] uppercase tracking-wider text-slate-500">
+                <tr className="border-b border-white/8 text-left text-[10px] font-semibold text-slate-500">
                   <th className="px-4 py-2.5">When</th>
                   <th className="px-4 py-2.5">Domain</th>
                   <th className="px-4 py-2.5">Page</th>
@@ -102,7 +102,7 @@ export default function History() {
             Images are AES-256-GCM encrypted on disk and decrypted on demand. Hover to reveal.
           </p>
           {shots.length === 0 ? (
-            <div className="rounded-xl border border-white/8 bg-[#12151d] p-8 text-center text-xs text-slate-600">
+            <div className="rounded-xl surface p-8 text-center text-xs text-slate-600">
               No screenshots yet — enable capture in Settings (Windows app takes them).
             </div>
           ) : (
@@ -111,7 +111,7 @@ export default function History() {
                 <button
                   key={s.id}
                   onClick={() => setSelected(s)}
-                  className="group overflow-hidden rounded-lg border border-white/8 bg-[#12151d] text-left transition hover:border-blue-500/40"
+                  className="group overflow-hidden rounded-lg surface text-left transition hover:border-blue-400/60"
                 >
                   <img
                     src={`${API}/api/screenshots/${s.id}/image`}

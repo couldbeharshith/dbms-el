@@ -40,7 +40,7 @@ export default function ShotModal({ shot, onClose }: { shot: ShotRow; onClose: (
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-8" onClick={onClose}>
       <div
-        className="max-h-full w-full max-w-4xl overflow-y-auto rounded-xl border border-white/10 bg-[#12151d] p-5"
+        className="max-h-full w-full max-w-4xl overflow-y-auto rounded-xl surface p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-start justify-between gap-4">
@@ -77,13 +77,13 @@ export default function ShotModal({ shot, onClose }: { shot: ShotRow; onClose: (
         />
 
         <div className="mt-4 rounded-lg bg-white/4 p-3">
-          <div className="text-[10px] uppercase tracking-wider text-slate-500">
+          <div className="text-[10px] font-semibold text-slate-500">
             Observation {d.processed === false ? "· pending processing" : ""}
           </div>
           <div className="mt-1 text-sm leading-snug text-slate-300">{d.caption || "—"}</div>
           {d.ocr_text && (
             <div className="mt-2 border-t border-white/8 pt-2">
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">OCR (decrypted on view)</div>
+              <div className="text-[10px] font-semibold text-slate-500">OCR (decrypted on view)</div>
               <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-slate-400">
                 {d.ocr_text}
               </pre>
@@ -101,7 +101,7 @@ export default function ShotModal({ shot, onClose }: { shot: ShotRow; onClose: (
         </div>
 
         <div className="mt-4">
-          <div className="mb-2 text-[10px] uppercase tracking-wider text-slate-500">
+          <div className="mb-2 text-[10px] font-semibold text-slate-500">
             Visually similar screenshots (cross-modal vector search)
           </div>
           {similar === null ? (
