@@ -5,7 +5,7 @@ declare global {
     desktop?: {
       getSettings: () => Promise<Record<string, unknown>>;
       setSettings: (patch: Record<string, unknown>) => Promise<Record<string, unknown>>;
-      captureNow: () => Promise<boolean>;
+      captureNow: () => Promise<string>;
     };
   }
 }

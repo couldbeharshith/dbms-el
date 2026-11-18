@@ -1,17 +1,102 @@
 @import "tailwindcss";
 
+/*
+  Direction: dark ink-navy panels, flat ultramarine actions, and one recurring
+  gesture: a lime highlighter swipe (page titles, active nav, avatar) -- memories
+  are what you would highlight. Radii are kept small and panels flat.
+*/
+@theme {
+  --font-sans: "Bahnschrift", "Segoe UI", system-ui, sans-serif;
+  --color-blue-300: #8da2ff;
+  --color-blue-500: #4a5cff;
+  --color-blue-600: #3a49e0;
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius-xl: 5px;
+  --radius-2xl: 6px;
+}
+
 :root {
   color-scheme: dark;
+  --paper: #0e1218;
+  --sheet: #161c25;
+  --ink: #0e1218;
+  --marker: #d8f35a;
+  --accent: #4a5cff;
 }
 
 body {
-  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
-  background: #0b0d12;
-  color: #e5e7eb;
+  font-family: var(--font-sans);
+  background: var(--paper);
+  color: #e6e9ef;
   overflow: hidden;
 }
 
-/* thin scrollbars that match the dark shell */
 *::-webkit-scrollbar { width: 8px; height: 8px; }
-*::-webkit-scrollbar-thumb { background: #2a3040; border-radius: 4px; }
+*::-webkit-scrollbar-thumb { background: #2a3342; border-radius: 4px; }
 *::-webkit-scrollbar-track { background: transparent; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- shared building blocks ------------------------------------------- */
+.surface {
+  background: var(--sheet);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.page-title {
+  display: block;
+  font-family: "Bahnschrift SemiCondensed", var(--font-sans);
+  font-size: 2rem;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #f1f3f8;
+}
+.page-title::after {
+  content: "";
+  display: block;
+  width: 2.5rem;
+  height: 4px;
+  margin: 0.4rem 0 0.5rem;
+  background: var(--marker);
+}
+
+.nav-active {
+  background: var(--marker);
+  color: var(--ink);
+  box-shadow: inset 3px 0 0 var(--ink);
+}
+
+.btn-accent {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  transition: background 0.12s, transform 0.12s;
+}
+.btn-accent:hover { background: #3a49e0; }
+.btn-accent:active { transform: translateY(1px); }
+.btn-accent:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.input {
+  width: 100%;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.65rem 0.8rem;
+  font-size: 0.875rem;
+  color: #e6e9ef;
+  outline: none;
+}
+.input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(74, 92, 255, 0.3); }
+
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.pop-in { animation: pop-in 0.18s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .pop-in { animation: none; }
+  * { transition: none !important; }
+}
