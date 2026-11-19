@@ -12,9 +12,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app import config, db, pipeline
+from backend.app import config, db, mongo, pipeline
 from backend.app.embed import service as embed_service
-from backend.app.routers import data, events, memories, queries, recall, screenshots, settings, stats
+from backend.app.routers import (auth, blacklist, data, events, memories, queries, recall,
+                                 screenshots, settings, stats)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("dbms-el")
@@ -70,6 +71,7 @@ async def _retention_loop(user_id):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_pool()
+    mongo.init()
     db.apply_schema(config.REPO_ROOT / "sql" / "schema.sql")
     app.state.user = db.get_default_user()
     log.info("Schema applied; default user %s", app.state.user["username"])
@@ -86,6 +88,7 @@ async def lifespan(app: FastAPI):
         t.cancel()
     for t in list(app.state.pending_tasks):
         t.cancel()
+    mongo.close()
     db.close_pool()
 
 
@@ -107,6 +110,8 @@ app.include_router(recall.router)
 app.include_router(stats.router)
 app.include_router(settings.router)
 app.include_router(data.router)
+app.include_router(auth.router)
+app.include_router(blacklist.router)
 
 
 @app.get("/")

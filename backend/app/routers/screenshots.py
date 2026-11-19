@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from backend.app import config, crypto, db, pipeline
 from backend.app.phash import distance, fingerprint
+from backend.app.routers import blacklist
 
 router = APIRouter(prefix="/api", tags=["screenshots"])
 
@@ -32,6 +33,8 @@ async def upload_screenshot(payload: ScreenshotIn, request: Request):
     user = request.app.state.user
     if not user["settings"].get("screenshots_enabled", True):
         return {"accepted": False, "screenshots_enabled": False}
+    if blacklist.is_blacklisted(payload.source_app):
+        return {"accepted": False, "skipped_blacklisted": True}
 
     image_bytes = base64.b64decode(payload.image_b64)
     if len(image_bytes) > MAX_IMAGE_BYTES:

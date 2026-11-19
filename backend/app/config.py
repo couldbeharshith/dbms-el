@@ -26,6 +26,8 @@ os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://harshith:mysecretpassword@localhost:5432/mydb"
 )
+MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
+MONGO_DB = os.getenv("MONGO_DB", "dbms_el")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-6-luna")
 EMBED_MODEL_DIR = Path(os.getenv("EMBED_MODEL_DIR", r"D:\AI\jina_omni_test\model"))
