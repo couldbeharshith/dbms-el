@@ -4,7 +4,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Request
 
-from backend.app import config, db, pipeline
+from backend.app import config, consolidation, db
 
 router = APIRouter(prefix="/api", tags=["data"])
 
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/api", tags=["data"])
 async def consolidate_now(request: Request):
     user = request.app.state.user
     # Manual trigger: skip the flex tier — the user is waiting on this call.
-    stats = await pipeline.consolidate(user["id"], fast=True)
+    stats = await consolidation.consolidate(user["id"], fast=True)
     return stats
 
 

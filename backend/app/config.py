@@ -50,6 +50,37 @@ MEMORY_MERGE_SIMILARITY = 0.70
 # any that slipped through — both without any LLM calls.
 MEMORY_DUPLICATE_SIMILARITY = 0.88
 RETENTION_CHECK_INTERVAL_SEC = 6 * 3600
+# Which implementation each swappable ML component uses (see backend/app/ml/).
+# Models are trained by scripts/train_models.py and read from data/models/.
+CLUSTERER = "agglomerative"  # greedy | agglomerative | hdbscan
+IMPORTANCE = "model"        # heuristic | model
+DECAY = "model"             # off | model
+HABITS = True               # True -> detect routines and store them as 'habit' memories
+GATE = "model"             # always | model
+RANKER = "learned"         # baseline | cross_encoder | learned
+MODEL_DIR = DATA_DIR / "models"
+# HDBSCAN clustering looks back this far (needs retention_days >= this).
+CLUSTER_WINDOW_DAYS = 30
+HDBSCAN_MIN_CLUSTER_SIZE = 2
+HDBSCAN_MIN_SAMPLES = 1
+HDBSCAN_SELECTION = "eom"  # eom | leaf
+HDBSCAN_PCA_DIMS = 10
+AGGLOMERATIVE_DISTANCE = 0.70  # cosine distance; 0.70 = average similarity of 0.30 inside a cluster
+# Importance model: clusters below this probability stay "pending" (no memory, no LLM call).
+IMPORTANCE_PROMOTE_THRESHOLD = 0.5
+# Decay model: memories whose predicted chance of being retrieved in the next 14 days is
+# below this (and are at least DECAY_MIN_AGE_DAYS old) get archived.
+DECAY_ARCHIVE_BELOW = 0.25
+DECAY_MIN_AGE_DAYS = 14
+# Habit detection: enough distinct days, and a time-of-day pattern (Rayleigh test).
+HABIT_MIN_DAYS = 4
+HABIT_MIN_OBSERVATIONS = 5
+HABIT_MAX_P_VALUE = 0.01
+HABIT_MIN_CONCENTRATION = 0.6
+# Retrieval: the SQL fetches RETRIEVAL_CANDIDATES by the baseline score, the ranker
+# reorders them, and the top RETRIEVAL_TOP_K go into the context block.
+RETRIEVAL_CANDIDATES = 20
+RETRIEVAL_TOP_K = 5
 
 # Perceptual-fingerprint dedupe: skip captures that look identical to a RECENT
 # one (idle screens, cursor blinks, tiny edits). Windowed so an unchanged

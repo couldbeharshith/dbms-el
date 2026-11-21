@@ -12,10 +12,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app import config, db, mongo, pipeline
+from backend.app import config, consolidation, db, mongo
 from backend.app.embed import service as embed_service
+from backend.app.ml.retrain import ranker_is_stale, retrain_ranker
 from backend.app.routers import (auth, blacklist, data, events, memories, queries, recall,
-                                 screenshots, settings, stats)
+                                 screenshots, settings, stats, training)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("dbms-el")
@@ -27,13 +28,22 @@ async def _consolidation_loop(user_id):
     while True:
         try:
             await asyncio.wait_for(
-                pipeline.consolidate(user_id), timeout=600
+                consolidation.consolidate(user_id), timeout=600
             )
         except asyncio.TimeoutError:
             log.warning("Consolidation pass timed out")
         except Exception:
             log.exception("Consolidation pass failed")
         await asyncio.sleep(config.CONSOLIDATION_INTERVAL_SEC)
+
+
+async def _retrain_if_stale():
+    """Votes cast while the app was closed (or whose retrain never ran) are applied at startup."""
+    try:
+        if await asyncio.to_thread(ranker_is_stale):
+            log.info("Retrain result: %s", await asyncio.to_thread(retrain_ranker))
+    except Exception:
+        log.exception("Startup retrain failed")
 
 
 async def _retention_loop(user_id):
@@ -112,6 +122,7 @@ app.include_router(settings.router)
 app.include_router(data.router)
 app.include_router(auth.router)
 app.include_router(blacklist.router)
+app.include_router(training.router)
 
 
 @app.get("/")

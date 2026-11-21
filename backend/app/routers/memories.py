@@ -17,7 +17,7 @@ async def list_memories(request: Request, limit: int = 200):
     rows = db.query(
         """
         SELECT m.id, m.content, m.importance, u.hit_count, u.last_retrieved_at,
-               m.created_at, m.updated_at, m.source,
+               m.created_at, m.updated_at, m.source, m.archived_at,
                (SELECT count(*) FROM memory_observations mo
                  WHERE mo.memory_id = m.id) AS evidence_count,
                (SELECT coalesce(array_agg(t.topic), '{}') FROM

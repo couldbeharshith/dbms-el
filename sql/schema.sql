@@ -121,7 +121,8 @@ CREATE TABLE IF NOT EXISTS memories (
     content     TEXT NOT NULL,
     embedding   vector(1024) NOT NULL,
     importance  REAL NOT NULL DEFAULT 0.5 CHECK (importance >= 0 AND importance <= 1),
-    source      TEXT NOT NULL DEFAULT 'auto' CHECK (source IN ('auto', 'manual', 'seed')),
+    source      TEXT NOT NULL DEFAULT 'auto' CHECK (source IN ('auto', 'manual', 'seed', 'habit')),
+    archived_at TIMESTAMPTZ,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -161,6 +162,26 @@ CREATE TABLE IF NOT EXISTS query_memories (
 -- In-place migration from the earlier denormalized schema (no-ops on fresh DBs)
 -- ============================================================================
 
+-- ML additions: memories can be archived (decay model) and can be habits
+ALTER TABLE memories ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+ALTER TABLE memories DROP CONSTRAINT IF EXISTS memories_source_check;
+ALTER TABLE memories ADD CONSTRAINT memories_source_check
+    CHECK (source IN ('auto', 'manual', 'seed', 'habit'));
+-- "Train memories" tab: example prompts and the user's thumbs up/down per retrieved memory
+CREATE TABLE IF NOT EXISTS training_prompts (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    text       TEXT NOT NULL,
+    embedding  vector(1024) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS memory_feedback (
+    prompt_id UUID NOT NULL REFERENCES training_prompts(id) ON DELETE CASCADE,
+    memory_id UUID NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    vote      SMALLINT NOT NULL CHECK (vote IN (-1, 1)),
+    voted_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (prompt_id, memory_id)
+);
 -- users.settings JSONB -> atomic columns
 ALTER TABLE users ADD COLUMN IF NOT EXISTS tracking_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS screenshots_enabled BOOLEAN NOT NULL DEFAULT TRUE;

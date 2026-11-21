@@ -1,5 +1,6 @@
 # --- user scratch ---
 temp/
+agent_temp/
 
 # --- python (root uv project) ---
 .venv/

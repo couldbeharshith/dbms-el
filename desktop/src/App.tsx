@@ -4,17 +4,19 @@ import History from "./pages/History";
 import Memories from "./pages/Memories";
 import Recall from "./pages/Recall";
 import Settings from "./pages/Settings";
+import TrainMemories from "./pages/TrainMemories";
 import Icon from "./components/Icon";
 import LockScreen, { fetchAccountCount } from "./components/LockScreen";
 import { get } from "./api";
 
-type Page = "dashboard" | "history" | "recall" | "memories" | "settings";
+type Page = "dashboard" | "history" | "recall" | "memories" | "train" | "settings";
 
 const NAV: { id: Page; label: string }[] = [
   { id: "dashboard", label: "Dashboard" },
   { id: "history", label: "History" },
   { id: "recall", label: "Recall" },
   { id: "memories", label: "Memories" },
+  { id: "train", label: "Train memories" },
   { id: "settings", label: "Settings" },
 ];
 
@@ -154,6 +156,7 @@ export default function App() {
           {page === "history" && <History />}
           {page === "recall" && <Recall />}
           {page === "memories" && <Memories />}
+          {page === "train" && <TrainMemories />}
           {page === "settings" && <Settings />}
         </main>
       </div>

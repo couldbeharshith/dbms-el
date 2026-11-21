@@ -10,7 +10,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
-from backend.app import config, crypto, db, pipeline
+from backend.app import config, crypto, db, observations
 from backend.app.phash import distance, fingerprint
 from backend.app.routers import blacklist
 
@@ -99,7 +99,7 @@ def _task_done(task: asyncio.Task) -> None:
 
 
 def _schedule_processing(request: Request, sid: uuid.UUID) -> None:
-    task = asyncio.create_task(pipeline.process_screenshot(sid))
+    task = asyncio.create_task(observations.process_screenshot(sid))
     request.app.state.pending_tasks.add(task)
     task.add_done_callback(request.app.state.pending_tasks.discard)
     task.add_done_callback(_task_done)
